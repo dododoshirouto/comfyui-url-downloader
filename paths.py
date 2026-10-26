@@ -30,12 +30,22 @@ def model_types():
     return result
 
 
+PERSISTENT_ROOT = "/runpod-volume"
+
+
 def custom_nodes_dir():
-    """custom_nodes_dev のパス（無ければ None）"""
-    for p in _folder_paths().get_folder_paths("custom_nodes"):
+    """カスタムノードの保存先。custom_nodes_dev があればそこ、無ければ探索パスの先頭（Manager のインストール先と同じ）"""
+    candidates = _folder_paths().get_folder_paths("custom_nodes")
+    for p in candidates:
         if "custom_nodes_dev" in p.replace("\\", "/").split("/"):
             return p
-    return None
+    return candidates[0] if candidates else None
+
+
+def is_persistent(path):
+    """Network Volume 上か（外ならワーカーの入れ替わりで消える）"""
+    p = path.replace("\\", "/")
+    return p == PERSISTENT_ROOT or p.startswith(PERSISTENT_ROOT + "/")
 
 
 def model_base_dir(model_type):

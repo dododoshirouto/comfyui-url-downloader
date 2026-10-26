@@ -27,6 +27,8 @@ STATUS_FAILED = "failed"
 STATUS_CANCELED = "canceled"
 ACTIVE = {STATUS_QUEUED, STATUS_RUNNING}
 
+NOT_PERSISTENT_WARNING = "保存先が Network Volume（/runpod-volume）の外です。ワーカーが入れ替わると消えます"
+
 
 class JobError(Exception):
     pass
@@ -95,17 +97,21 @@ def validate_request(body):
             job = Job(kind, url, model_type, body.get("subfolder"), filename,
                       body.get("civitai_token"), body.get("hf_token"))
             job.dest = dest if filename else dest_dir
+            if not paths.is_persistent(dest_dir):
+                job.warning = NOT_PERSISTENT_WARNING
             return job
         if kind == "custom_node":
             _, repo, _ = url_resolver.github_repo(url)
             base = paths.custom_nodes_dir()
             if not base:
-                raise JobError("custom_nodes_dev が見つかりません（extra_model_paths.yaml の custom_nodes を確認してください）")
+                raise JobError("カスタムノードの保存先が見つかりません（extra_model_paths.yaml の custom_nodes を確認してください）")
             dest = os.path.join(base, repo)
             if os.path.exists(dest):
                 raise JobError(f"既に存在します: {dest}")
             job = Job(kind, url)
             job.dest = dest
+            if not paths.is_persistent(base):
+                job.warning = NOT_PERSISTENT_WARNING
             return job
     except (paths.PathError, url_resolver.UrlError) as e:
         raise JobError(str(e)) from e
@@ -286,4 +292,5 @@ async def _clone_custom_node(job):
         shutil.rmtree(dest, ignore_errors=True)
         raise JobError("git clone に失敗しました: " + stderr.decode(errors="replace").strip()[-500:])
     if os.path.exists(os.path.join(dest, "requirements.txt")):
-        job.warning = "requirements.txt があります。追加のパッケージは自動では入りません。必要ならイメージに焼き込んでください"
+        req = "requirements.txt があります。追加のパッケージは自動では入りません。必要ならイメージに焼き込んでください"
+        job.warning = f"{job.warning}\n{req}" if job.warning else req

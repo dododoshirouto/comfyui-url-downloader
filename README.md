@@ -12,7 +12,7 @@ RunPod Serverless 上の ComfyUI（[subski-runpod-comfyui-backend](https://githu
   - GitHub のリンク
   - CivitAI のリンク
 - モデルは `models/` 配下の種類別フォルダ（`checkpoints`、`loras`、`vae`、`diffusion_models`、`text_encoders` など）に保存する。その中のサブフォルダも指定できる（無ければ作る）
-- カスタムノードは `custom_nodes_dev/` に `git clone` する
+- カスタムノードは `git clone` する。保存先は `custom_nodes_dev` があればそこ、無ければ探索パスの先頭の `custom_nodes`（5 章）
 - ダウンロードはサーバ側で裏で動かし、画面には進捗を表示する
 - ダウンロード中は、拡張 idle_disconnect による自動切断を止める
 
@@ -20,7 +20,7 @@ RunPod Serverless 上の ComfyUI（[subski-runpod-comfyui-backend](https://githu
 
 - ComfyUI 0.42.0、フロントエンド 1.55 以降
 - `extra_model_paths.yaml` で Network Volume（`/runpod-volume/ComfyUI/`）が `is_default: true` になっている。そのため、ComfyUI の `folder_paths.get_folder_paths(<種類>)` の先頭が Network Volume のフォルダになる
-- `custom_nodes_dev`（`/runpod-volume/ComfyUI/custom_nodes_dev/`）がカスタムノードの探索パスに入っている
+- カスタムノードの探索パスの先頭が Network Volume の `/runpod-volume/ComfyUI/custom_nodes/` になっている（`extra_model_paths.yaml` の `subski_nodes` で `is_default: true`）。`custom_nodes_dev` を探索パスに入れている環境では、そちらを優先する
 - ブラウザ → Cloudflare Worker（認証）→ RunPod → ComfyUI の構成。Worker の認証を通った人だけが使える
 - Cloudflare は約 100 秒で応答のないリクエストを切るため、ダウンロード自体はリクエストの中で行わない
 
@@ -37,7 +37,7 @@ ComfyUI のサイドバーに「URL ダウンロード」タブ（アイコン�
 | モデルの種類 | 区分が「モデル」のときだけ表示。サーバに登録されている種類の一覧から選ぶ |
 | サブフォルダ | 区分が「モデル」のときだけ表示。任意。`sdxl/style` のように `/` 区切りで指定する |
 | ファイル名 | 区分が「モデル」のときだけ表示。任意。空なら自動で決める（4.3） |
-| 保存先の表示 | 実際に保存されるパスを入力に合わせて表示する |
+| 保存先の表示 | 実際に保存されるパスを入力に合わせて表示する。Network Volume（`/runpod-volume`）の外なら「ワーカーが入れ替わると消えます」と警告する |
 | 「ダウンロード」ボタン | ジョブを登録する |
 
 ### 3.2 ジョブ一覧
@@ -96,14 +96,15 @@ ComfyUI のサイドバーに「URL ダウンロード」タブ（アイコン�
 ### 4.5 カスタムノード：GitHub のリンク
 
 - 受け付ける形：`https://github.com/<owner>/<repo>`（末尾の `.git`・`/` は無視）、`https://github.com/<owner>/<repo>/tree/<branch>`
-- `git clone --depth 1 [--branch <branch>] <URL> <custom_nodes_dev>/<repo>` を実行する
+- `git clone --depth 1 [--branch <branch>] <URL> <カスタムノードの保存先>/<repo>` を実行する
 - GitHub 以外の URL はエラーにする
 
 ## 5. 保存先と安全性
 
 - モデルの保存先：`folder_paths.get_folder_paths(<種類>)[0]` / `<サブフォルダ>` / `<ファイル名>`
 - モデルの種類の一覧：`folder_paths.folder_names_and_paths` のうち、`custom_nodes`・`configs` を除いたもの
-- カスタムノードの保存先：`folder_paths.get_folder_paths("custom_nodes")` のうち、パスに `custom_nodes_dev` を含むもの。見つからなければエラーにする（イメージ内の `custom_nodes/` には入れない）
+- カスタムノードの保存先：`folder_paths.get_folder_paths("custom_nodes")` のうち、パスに `custom_nodes_dev` を含むもの。無ければ先頭のパス（ComfyUI-Manager のインストール先と同じ）。探索パスが空ならエラーにする
+- 保存先が `/runpod-volume` の外になる場合（`is_default` が効いていない、ローカル環境など）は、画面の保存先表示とジョブに「ワーカーが入れ替わると消えます」と警告を出す。ダウンロード自体は止めない
 - サブフォルダは `/` か `\` で区切り、各要素が空・`.`・`..`・絶対パス・制御文字を含む場合はエラーにする。組み立てたパスを解決し、保存先フォルダの外になる場合もエラーにする
 - 同じ名前のファイル・フォルダが既にある場合は上書きせずエラーにする
 - ダウンロード中は `<ファイル名>.part` に書き、完了してから本来の名前に変える。失敗・中止したら `.part` を消す
@@ -159,7 +160,7 @@ comfyui-url-downloader/
 
 ## 10. 導入
 
-Network Volume の `ComfyUI/custom_nodes_dev/` に、このリポジトリを `comfyui-url-downloader/` として置き、ワーカーを再起動する。
+Network Volume の `ComfyUI/custom_nodes/` に、このリポジトリを `comfyui-url-downloader/` として置き、ワーカーを再起動する。
 
 ## 11. 受け入れ確認
 
@@ -174,12 +175,12 @@ Network Volume の `ComfyUI/custom_nodes_dev/` に、このリポジトリを `c
 | 7 | CivitAI のモデルページの URL を `loras` に入れる | 最新バージョンの主ファイルが、CivitAI 上のファイル名で保存される |
 | 8 | ログインが必要な CivitAI のモデルをトークンなしで入れる | 「CivitAI のトークンが必要です」で失敗する。トークンを設定すると成功する |
 | 9 | 大きいファイルの途中で「中止」を押す | 中止になり、`.part` が残らない |
-| 10 | GitHub のリポジトリ URL をカスタムノードとして入れる | `custom_nodes_dev/<repo>` に clone され、再起動の案内が出る。`requirements.txt` があれば警告も出る |
+| 10 | GitHub のリポジトリ URL をカスタムノードとして入れる | `/runpod-volume/ComfyUI/custom_nodes/<repo>` に clone され、再起動の案内が出る。`requirements.txt` があれば警告も出る |
 | 11 | ダウンロード中に 5 分以上操作しない（idle_disconnect 有効） | 警告も切断もされず、完了から計測が始まる |
 
 ## 12. 既知の制約
 
 - ジョブは ComfyUI のメモリ上にだけあり、再起動で消える。途中から再開する仕組みはない
 - ダウンロード中に画面を閉じると、ワーカーが止まって途中で切れることがある（8 章）
-- カスタムノードの追加の pip 依存は入らない。`custom_nodes_dev` は依存のないノードの試作用
+- カスタムノードの追加の pip 依存は入らない。依存のあるノードはイメージに焼き込む
 - トークンは平文で保存される（7 章）

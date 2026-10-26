@@ -13,7 +13,12 @@ routes = PromptServer.instance.routes
 
 @routes.get("/url_downloader/model_types")
 async def get_model_types(request):
-    return web.json_response({"model_types": paths.model_types(), "custom_nodes_dir": paths.custom_nodes_dir()})
+    nodes_dir = paths.custom_nodes_dir()
+    return web.json_response({
+        "model_types": [{**t, "persistent": paths.is_persistent(t["path"])} for t in paths.model_types()],
+        "custom_nodes_dir": nodes_dir,
+        "custom_nodes_persistent": bool(nodes_dir) and paths.is_persistent(nodes_dir),
+    })
 
 
 @routes.get("/url_downloader/jobs")

@@ -19,6 +19,7 @@ const ACTIVE = new Set(["queued", "downloading"]);
 let jobs = [];
 let modelTypes = [];
 let customNodesDir = null;
+let customNodesPersistent = true;
 let panelEl = null;
 let pollTimer = null;
 
@@ -122,18 +123,24 @@ function renderForm(container) {
     el("label", { style: S.label }, "ファイル名"), filename);
   const submit = el("button", { type: "button", style: S.button }, "ダウンロード");
 
+  const notPersistent = "⚠ Network Volume（/runpod-volume）の外です。ワーカーが入れ替わると消えます";
   const updateView = () => {
     const isModel = kind.value === "model";
     modelFields.style.display = isModel ? "grid" : "none";
+    let text, persistent;
     if (isModel) {
-      const base = modelTypes.find((t) => t.name === modelType.value)?.path || "?";
+      const t = modelTypes.find((x) => x.name === modelType.value);
       const sub = subfolder.value.trim();
-      destView.textContent = `保存先: ${base}${sub ? "/" + sub : ""}/${filename.value.trim() || "（自動）"}`;
+      text = `保存先: ${t?.path || "?"}${sub ? "/" + sub : ""}/${filename.value.trim() || "（自動）"}`;
+      persistent = t ? t.persistent : true;
+    } else if (customNodesDir) {
+      text = `保存先: ${customNodesDir}/<リポジトリ名>`;
+      persistent = customNodesPersistent;
     } else {
-      destView.textContent = customNodesDir
-        ? `保存先: ${customNodesDir}/<リポジトリ名>`
-        : "custom_nodes_dev が見つかりません（カスタムノードは入れられません）";
+      text = "カスタムノードの保存先が見つかりません（カスタムノードは入れられません）";
+      persistent = true;
     }
+    destView.replaceChildren(text, persistent ? "" : el("div", { style: { color: "#d90" } }, notPersistent));
   };
   for (const e of [kind, modelType]) e.addEventListener("change", updateView);
   for (const e of [subfolder, filename]) e.addEventListener("input", updateView);
@@ -199,7 +206,7 @@ function renderJobs() {
           ]
         : null,
       j.message ? el("div", { style: { color: j.status === "failed" ? "#e55" : "inherit" } }, j.message) : null,
-      j.warning ? el("div", { style: { color: "#d90" } }, j.warning) : null,
+      j.warning ? el("div", { style: { color: "#d90", whiteSpace: "pre-line" } }, j.warning) : null,
       el("div", { style: { marginTop: "4px" } }, actions)));
   }
 }
@@ -212,6 +219,7 @@ async function renderPanel(container) {
     const info = await request("/url_downloader/model_types");
     modelTypes = info.model_types || [];
     customNodesDir = info.custom_nodes_dir;
+    customNodesPersistent = info.custom_nodes_persistent !== false;
   } catch (err) {
     panelEl.append(el("div", { style: { color: "#e55" } }, `モデルの種類を取得できません: ${err.message}`));
   }
