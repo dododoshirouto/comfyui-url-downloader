@@ -48,6 +48,62 @@ def is_persistent(path):
     return p == PERSISTENT_ROOT or p.startswith(PERSISTENT_ROOT + "/")
 
 
+def list_models():
+    """種類ごとに、登録されているすべてのフォルダ配下のファイルとサイズを返す（.part・隠しファイルは除く）"""
+    fp = _folder_paths()
+    result = []
+    for name in sorted(fp.folder_names_and_paths):
+        if name in EXCLUDED_MODEL_TYPES:
+            continue
+        files = []
+        for base in fp.get_folder_paths(name):
+            if not os.path.isdir(base):
+                continue
+            for root, dirs, names in os.walk(base, followlinks=True):
+                dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                for n in sorted(names):
+                    if n.startswith(".") or n.endswith(".part"):
+                        continue
+                    full = os.path.join(root, n)
+                    try:
+                        size = os.path.getsize(full)
+                    except OSError:
+                        continue
+                    files.append({
+                        "path": full,
+                        "relpath": os.path.relpath(full, base).replace("\\", "/"),
+                        "base": base,
+                        "size": size,
+                        "persistent": is_persistent(base),
+                    })
+        if files:
+            result.append({"name": name, "files": files, "total": sum(f["size"] for f in files)})
+    return result
+
+
+def delete_model(model_type, path):
+    """登録済みフォルダ配下のファイルだけを消す。ComfyUI のファイル一覧キャッシュも捨てる"""
+    if model_type in EXCLUDED_MODEL_TYPES:
+        raise PathError(f"モデルの種類が不正です: {model_type}")
+    fp = _folder_paths()
+    if model_type not in fp.folder_names_and_paths:
+        raise PathError(f"モデルの種類が不正です: {model_type}")
+    target = os.path.realpath(path or "")
+    for base in fp.get_folder_paths(model_type):
+        base_real = os.path.realpath(base)
+        if os.path.commonpath([base_real, target]) == base_real and target != base_real:
+            break
+    else:
+        raise PathError("削除できるのは、このモデルの種類のフォルダ内のファイルだけです")
+    if not os.path.isfile(target):
+        raise PathError(f"ファイルがありません: {path}")
+    os.remove(target)
+    cache = getattr(fp, "filename_list_cache", None)
+    if isinstance(cache, dict):
+        cache.pop(model_type, None)
+    return target
+
+
 def model_base_dir(model_type):
     if model_type in EXCLUDED_MODEL_TYPES:
         raise PathError(f"モデルの種類が不正です: {model_type}")

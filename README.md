@@ -15,6 +15,7 @@ RunPod Serverless 上の ComfyUI（[subski-runpod-comfyui-backend](https://githu
 - カスタムノードは `git clone` する。保存先は `custom_nodes_dev` があればそこ、無ければ探索パスの先頭の `custom_nodes`（5 章）
 - ダウンロードはサーバ側で裏で動かし、画面には進捗を表示する
 - ダウンロード中は、拡張 idle_disconnect による自動切断を止める
+- 今入っているモデルを種類ごとに一覧し、ファイルサイズの表示と削除ができる（3.4）
 
 ## 2. 前提となる構成
 
@@ -54,6 +55,15 @@ ComfyUI のサイドバーに「URL ダウンロード」タブ（アイコン�
 - モデル：「完了しました。モデル一覧を更新するには、ノードのモデル選択欄を開き直すか、画面を再読み込みしてください」
 - カスタムノード：「完了しました。ワーカーを再起動すると読み込まれます」
   - `requirements.txt` がある場合は、あわせて「requirements.txt があります。追加のパッケージは自動では入りません。必要ならイメージに焼き込んでください」と警告する
+
+### 3.4 モデル一覧
+
+- パネルの下部に「モデル一覧」を表示する。「更新」ボタンで読み直す。モデルのダウンロードが完了したときも自動で読み直す
+- 種類ごとに折りたたみ（`<種類>（N 件・合計サイズ）`）、開くと各ファイルの相対パス・サイズ・「削除」ボタンを並べる
+- 対象は、その種類に登録されているすべてのフォルダ（Network Volume とイメージ内の両方）配下のファイル。サブフォルダの中も含む。`.part` と `.` で始まるファイル・フォルダは除く
+- イメージ内（`/runpod-volume` の外）のファイルには「（イメージ内）」と付ける
+- サイズは 1 GB 以上なら GB（小数 2 桁）、それ未満は MB（100 MB 以上は整数、1 MB 以上は小数 1 桁、1 MB 未満は小数 2 桁）で表示する
+- 「削除」を押すと、フルパスとサイズを示して確認する。OK でファイルを消し、一覧を読み直す。ComfyUI のファイル一覧のキャッシュも捨てるので、ノードのモデル選択欄を開き直すと消えた状態になる
 
 ## 4. URL の扱い
 
@@ -118,6 +128,8 @@ ComfyUI のサイドバーに「URL ダウンロード」タブ（アイコン�
 | メソッド・パス | 内容 |
 |---|---|
 | `GET /url_downloader/model_types` | モデルの種類と保存先パスの一覧、カスタムノードの保存先（無ければ `null`） |
+| `GET /url_downloader/models` | 種類ごとのファイル一覧（`path`・`relpath`・`base`・`size`・`persistent`）と合計サイズ |
+| `POST /url_downloader/models/delete` | ファイルを削除する。本文：`{ model_type, path }`。`path` がその種類に登録されたフォルダの外・ファイルでない場合は 400 |
 | `GET /url_downloader/jobs` | ジョブの一覧 |
 | `POST /url_downloader/jobs` | ジョブを登録する。本文：`{ kind: "model" \| "custom_node", url, model_type?, subfolder?, filename?, civitai_token?, hf_token? }`。入力が不正なら 400 と `{ error }` |
 | `POST /url_downloader/jobs/{id}/cancel` | ダウンロード中・待機中のジョブを中止する |
@@ -177,6 +189,8 @@ Network Volume の `ComfyUI/custom_nodes/` に、このリポジトリを `comfy
 | 9 | 大きいファイルの途中で「中止」を押す | 中止になり、`.part` が残らない |
 | 10 | GitHub のリポジトリ URL をカスタムノードとして入れる | `/runpod-volume/ComfyUI/custom_nodes/<repo>` に clone され、再起動の案内が出る。`requirements.txt` があれば警告も出る |
 | 11 | ダウンロード中に 5 分以上操作しない（idle_disconnect 有効） | 警告も切断もされず、完了から計測が始まる |
+| 12 | モデル一覧を開く | 種類ごとの件数・合計サイズ、各ファイルのサイズ（GB / MB）が出る |
+| 13 | モデル一覧で「削除」を押して OK | ファイルが消え、一覧とノードのモデル選択欄から消える |
 
 ## 12. 既知の制約
 

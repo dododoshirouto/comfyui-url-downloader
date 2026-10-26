@@ -21,6 +21,23 @@ async def get_model_types(request):
     })
 
 
+@routes.get("/url_downloader/models")
+async def get_models(request):
+    return web.json_response({"models": paths.list_models()})
+
+
+@routes.post("/url_downloader/models/delete")
+async def delete_model(request):
+    try:
+        body = await request.json()
+        removed = paths.delete_model(body.get("model_type"), body.get("path"))
+    except paths.PathError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"error": f"削除できません: {e}"}, status=400)
+    return web.json_response({"ok": True, "removed": removed})
+
+
 @routes.get("/url_downloader/jobs")
 async def get_jobs(request):
     return web.json_response({"jobs": downloader.list_jobs()})

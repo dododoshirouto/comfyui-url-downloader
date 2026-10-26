@@ -58,11 +58,24 @@ function formatBytes(n) {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// モデル一覧用：1 GB 以上は GB、それ未満は MB で表示する
+function formatModelSize(n) {
+  const GB = 1024 ** 3;
+  const MB = 1024 ** 2;
+  if (n >= GB) return `${(n / GB).toFixed(2)} GB`;
+  return `${(n / MB).toFixed(n >= 100 * MB ? 0 : n >= MB ? 1 : 2)} MB`;
+}
+
 async function refreshJobs() {
+  const before = new Map(jobs.map((j) => [j.id, j.status]));
   try {
     jobs = (await request("/url_downloader/jobs")).jobs || [];
   } catch (err) {
     console.warn("[UrlDownloader] jobs の取得に失敗", err);
+  }
+  // モデルのダウンロードが完了したら、モデル一覧を読み直す
+  if (jobs.some((j) => j.kind === "model" && j.status === "done" && before.has(j.id) && before.get(j.id) !== "done")) {
+    refreshModels();
   }
   publishBusy();
   renderJobs();
@@ -211,6 +224,62 @@ function renderJobs() {
   }
 }
 
+// ---- モデル一覧（サイズ表示・削除） ----
+
+let models = [];
+const openTypes = new Set();
+
+async function refreshModels() {
+  const box = panelEl?.querySelector("[data-models]");
+  if (!box) return;
+  try {
+    models = (await request("/url_downloader/models")).models || [];
+  } catch (err) {
+    box.replaceChildren(el("div", { style: { color: "#e55", fontSize: "12px" } }, `モデル一覧を取得できません: ${err.message}`));
+    return;
+  }
+  renderModels();
+}
+
+async function deleteModel(type, file) {
+  if (!confirm(`次のファイルを削除します。元に戻せません。\n\n${file.path}\n（${formatModelSize(file.size)}）`)) return;
+  try {
+    await request("/url_downloader/models/delete", {
+      method: "POST",
+      body: JSON.stringify({ model_type: type, path: file.path }),
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    alert(`削除できませんでした: ${err.message}`);
+  }
+  await refreshModels();
+}
+
+function renderModels() {
+  const box = panelEl?.querySelector("[data-models]");
+  if (!box) return;
+  box.replaceChildren();
+  if (!models.length) {
+    box.append(el("div", { style: { fontSize: "12px", opacity: "0.6" } }, "モデルはありません"));
+    return;
+  }
+  for (const t of models) {
+    const details = el("details", { open: openTypes.has(t.name), style: { marginBottom: "4px", fontSize: "12px" } });
+    details.addEventListener("toggle", () => (details.open ? openTypes.add(t.name) : openTypes.delete(t.name)));
+    details.append(el("summary", { style: { cursor: "pointer" } }, `${t.name}（${t.files.length} 件・${formatModelSize(t.total)}）`));
+    for (const f of t.files) {
+      details.append(el("div", {
+        style: { display: "flex", gap: "6px", alignItems: "center", padding: "2px 0 2px 12px", borderBottom: "1px solid var(--border-color)" },
+        title: f.path,
+      },
+        el("span", { style: { flex: "1", wordBreak: "break-all" } }, f.relpath, f.persistent ? null : el("span", { style: { color: "#d90" } }, "（イメージ内）")),
+        el("span", { style: { whiteSpace: "nowrap", opacity: "0.8" } }, formatModelSize(f.size)),
+        el("button", { type: "button", style: { ...S.button, padding: "0 8px" }, onclick: () => deleteModel(t.name, f) }, "削除")));
+    }
+    box.append(details);
+  }
+}
+
 async function renderPanel(container) {
   panelEl = el("div", { style: { padding: "12px", overflowY: "auto", height: "100%", boxSizing: "border-box" } });
   container.replaceChildren(panelEl);
@@ -226,7 +295,13 @@ async function renderPanel(container) {
   const form = el("div");
   renderForm(form);
   panelEl.append(form, el("h4", { style: { margin: "16px 0 8px", fontSize: "13px" } }, "ジョブ"), el("div", { "data-jobs": true }));
+  panelEl.append(
+    el("div", { style: { display: "flex", alignItems: "center", gap: "8px", margin: "16px 0 8px" } },
+      el("h4", { style: { margin: "0", fontSize: "13px" } }, "モデル一覧"),
+      el("button", { type: "button", style: { ...S.button, padding: "0 8px" }, onclick: () => refreshModels() }, "更新")),
+    el("div", { "data-models": true }, el("div", { style: { fontSize: "12px", opacity: "0.6" } }, "読み込み中…")));
   await refreshJobs();
+  await refreshModels();
 }
 
 app.registerExtension({
